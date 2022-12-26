@@ -1,0 +1,474 @@
+---
+title: "22.10.22_PU5058_REPORT.Rmd"
+output: pdf_document
+date: "2022-10-22"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+## Aim
+
+The aim is to highlight to local government, schools and parents the reduction in mental well being scores for girls in S4, specifically in rural areas. 
+
+
+## Load Packages
+```{r install packages}
+
+#install of the following packages, if they are not already installed, this is done in the console as you only need to do it once. The # in front of the code would need removed first, as I have left it as a comment as I have already installed all of the packages.Information about each of the packages is commented in the load libraries section below.
+
+#install.packages("tidyverse") #remember the inverted commas around the name of the package
+
+#install.packages("here")
+
+#install.packages("sf")
+
+#install.packages("mapview")
+
+#install.packages("cowplot")
+```
+
+```{r load the libraries within the packages}
+#load various packages needed to create the visualisations
+
+
+#here package is used to create file paths from a top level directory(folder)
+library(here)
+
+#tidyverse package has lots of functions useful for Data Science
+library(tidyverse)
+
+#sf (simple features) package is used to work with shapefiles, that includes spatial vector data, that are required for the creation of maps
+library(sf)
+
+#flexdashboard package is used to display multiple visualisations. I only have one map to display so this is not required. In the written discussion I mention that a table of additional information to accompany the map would be beneficial and then this package would be required.
+#library(flexdashboard)
+
+#mapview package has multiple functions that are used to create interactive visualisations of spatial data
+library(mapview)
+
+#gt package has functions to create tables, such as add headers, change column width. This could be used as an improvement as discussed in the written report.
+#library(gt)
+
+#cowplot is used in addition to the graphing package ggplot (part of the tidyverse package) that offers functions to create publication quality visualisations. Examples are choose themes, annotate graphs and align plots.
+library(cowplot)
+
+#plotly is used to create interactive graphs to be displayed on the internet
+library(plotly)
+
+#this is not a package to be installed but this sets the theme of the map, including the overall font size and the font size of labels and the title, line width. Default settings can be found at the following website https://rdrr.io/cran/cowplot/man/theme_cowplot.html
+theme_set(theme_cowplot())
+
+#there are multiple sources of information about different packages, one source can be found here https://rdocumentation.org/
+
+
+```
+
+## Read in data
+```{r read in the data}
+
+#Information about where the data came from can be found in the accompanying report.
+
+#to read in the data we will use the readr package which was loaded within the tidyverse package
+#We will assign the data files to objects by giving them names
+
+#These files include multiple variables including the mean wellbeing score (measure) and the year and gender of the group (indicator)
+S2_Boys<-read_csv(here("Input/22.10.22_01_PU5058_REPORT_S2_BOYS.csv"))
+S2_Girls<-read_csv(here("Input/22.10.22_02_PU5058_REPORT_S2_GIRLS.csv"))
+S4_Girls<-read_csv(here("Input/22.10.22_03_PU5058_REPORT_S4_GIRLS.csv"))
+S4_Boys<-read_csv(here("Input/22.10.22_04_PU5058_REPORT_S4_BOYS.csv"))
+
+#These files are required for creating the map. They include data zone information and shapefiles
+
+#read in the data for the council areas providing all multiple zone areas for each council in Scotland
+simd_indicators <- read_csv(here("Input/SIMD2020v2_indicators.csv"))
+
+#read in the geospatial data (shape files) used to create the map. Note: quiet=T results in no messages being displayed during upload
+datazone_sf <- st_read(here("Input/sc_dz_11.shp"), quiet = T)
+
+```
+## Prepare the data
+
+
+The first preparation of the data is for the bar chart.
+
+```{r check the data}
+#check the variables are the same in each file
+head(S2_Boys)
+head(S2_Girls)
+head(S4_Boys)
+head(S4_Girls)
+```
+
+```{r join the files}
+#join the files for S2, S4 boys and girls into one dataset
+combined_data<-bind_rows(S2_Boys,S4_Boys,S2_Girls,S4_Girls,.id = NULL)
+
+#it can be seen in the environment panel that the combined_data dataset has 100 observations, which is what is expected as the 4 individual datasets had 25 observations each.
+
+
+```
+The variables that we are interested in are indicator (giving year and gender of the pupils), area_name (council area) and measure(mean wellbeing score). Further information about how the mean wellbeing score is calculated can be found in the accompanying report.
+
+We need to know which council areas are in the S4_Girls dataset. This information will be useful when preparing the data for the map.
+
+
+```{r}
+S4_Girls$area_name%>%
+  table()
+```
+There are 24 councils with mean wellbeing score data.
+
+The combined data has a variable called indicator which includes the gender and the school year. This is not tidy data so the indicator column is split into School Year and Gender. The variable Gender_School_Year which includes both variables is also created but to only be used as a label on the bar chart x-axis.
+
+```{r create new variables - tidy data}
+
+
+
+#create a new dataset to store the new variables
+combined_data_substr<-combined_data%>%
+#filter for only Scotland, this will result in 4 observations to be plotted on the bar chart
+  filter(area_type=="Scotland")%>%
+#Create a new variable and select only the 1st to 7th character
+  mutate(Gender_School_Year=substr(indicator,1,7))%>%
+#Create a new variable and select only the 1st to 2nd character
+  mutate(School_Year=substr(indicator,1,2))%>%
+#Create a new variable and select only the 4th to 7th character
+  mutate(Gender=substr(indicator,4,7))
+  
+#check the new columns have been created
+head(combined_data_substr)
+ 
+  
+```
+
+The data is now only 4 observations and it can be seen that there are no missing values or unusual entries. No further investigation is required. The required variables will be selected when the bar chart is created.
+
+The preparation for the map can now be completed.
+
+The map will require more than 4 observations for the mean wellbeing score. It will require one for each of the council areas. We will use the original S4_Girls data set for the map.
+
+```{r}
+#Only the variables measure (mean Well being Score) and area_name (council area) are needed for the map
+#Create a new dataset to save the changes
+S4_Girls_col_rename<-S4_Girls%>%
+  #select the variables needed to create the graph
+  select(measure,area_name)%>%
+  #rename the column measure to be more meaningful when plotted in the map
+  rename(Average_Wellbeing_Score=measure)
+```
+
+
+The data zones to create the map will be sourced from a dataset that includes information from the Scottish Index of Multiple Deprivation report. Further information can be found in the accompanying report.
+
+```{r}
+#Investigate the variables in the simd indicators dataset
+head(simd_indicators)
+```
+The variables of interest will be Data_Zone and Council_area. Scotland is split into 6,976 geographic data zones.
+
+```{r check for missing values}
+#check for missing values in the simd_indicators data set
+simd_indicators%>%
+summarise_all(~sum(is.na(.)))
+```
+
+
+```{r}
+#check for unusual characters in the simd_indicators dataset
+simd_indicators%>%
+  select(Data_Zone, Council_area)%>%
+  filter_all(any_vars(str_detect(.,pattern ="%")))
+```
+
+```{r}
+#check for unusual characters in the simd_indicators dataset
+simd_indicators%>%
+  select(Data_Zone, Council_area)%>%
+  filter_all(any_vars(str_detect(.,pattern ="\\*")))
+```
+```{r}
+#Check which council areas are listed within the simd_indicators dataset
+simd_indicators$Council_area%>%table()
+
+```
+This information was checked because some of the council areas were not included in the research for the mean wellbeing scores.The number of times each council appears represents how many data zones make up the council area.
+
+```{r}
+#create a new dataset to include only the variables Data_Zone and Council-area.
+simd_selected_col<-simd_indicators%>%
+  #select the variables needed to be able to join to the S4_Girls_col_rename dataset
+  select(Data_Zone, Council_area)%>%
+  #remove the council areas that have no mean wellbeing score
+  filter(Council_area !="Scottish Borders" & Council_area !="West Dunbartonshire" & Council_area !="Shetland Islands" & Council_area !="West Lothian" & Council_area !="South Ayrshire" & Council_area !="South Lanarkshire" & Council_area !="Renfrewshire" & Council_area !="Stirling")
+```
+
+There are no missing values, unusual characters or council areas with no mean wellbeing score in the data set.
+
+The council areas in both data sets simd_selected_col (area_name) and in the S4_Girls_col_rename (Council_area) can now be used to join the datasets. This will create one dataset with the mean wellbeing scores and data zone information. This dataset will then be combined to the datazone shape files needed to create the map.
+
+
+
+
+```{r join data sets council area}
+#updated version use this joining councils 
+S4_councils_DZ<-left_join(simd_selected_col,S4_Girls_col_rename, by=c("Council_area"="area_name"))
+```
+
+```{r}
+head(S4_councils_DZ)
+```
+
+The datazone shapefile dataset will now be checked.
+
+```{r}
+#Investigate the variables in the datazone_sf dataset
+head(datazone_sf)
+```
+
+```{r check for missing values datazone_sf}
+#datazone_sf%>%
+  #summarise_all(~sum(is.na(.)))
+# I tried to check for missing values in the datazone_sf but I received a message "no loop for break/next, jumping to top level. This would need further investigation. I assume it is to do with being a shapefile.
+```
+
+The shape files now need to be joined using the data zones.
+```{r join data using data zones}
+#Add shape files by joining the data by the data zones.
+
+S4_councils_DZ_sf<-left_join(datazone_sf, S4_councils_DZ, by=c("DataZone"="Data_Zone"))
+```
+
+```{r}
+head(S4_councils_DZ_sf)
+```
+
+The dataset S4_councils_DZ_sf now contains the shape files for each datazone, council area and the mean wellbeing score that will be used to create the map.
+
+The bar chart can now be created.
+```{r}
+ 
+  #combined_data_substr$Gender_School_Year <- factor(combined_data_substr$Gender_School_Year,levels=c('S2 boys ','S4 boys ', 'S2 girls', 'S4 girls'))
+
+
+
+combined_data_substr%>%
+  select(Gender_School_Year, Gender,measure)%>%
+  #arrange(measure)%>%
+  ggplot(aes())+geom_col(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender))+
+  xlab("High School Year and Gender")+
+  ylab("Average Wellbeing Score")+
+  #scale_fill_manual(values=c("blue", "blue", "pink","pink"))+
+  theme_bw()
+  
+  #scale_color_manual(c("blue","pink"))
+
+#http://www.sthda.com/english/wiki/ggplot2-colors-how-to-change-colors-automatically-and-manually
+    
+```
+This is second attempt
+```{r}
+
+#Col instead of bar used because got the measure [ref] 
+
+#combined_data_substr%>%
+ # select(Gender_School_Year, Gender,measure)%>%
+  #arrange(measure)%>%
+ # ggplot(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender))+geom_col(stat="identity")+scale_fill_manual(values=c("deepskyblue","pink"))+
+ # geom_text(label=measure)+
+ # xlab("High School Year and Gender")+
+ # ylab("Average Wellbeing Score")+
+  #scale_fill_manual(values=c("green", "green", "pink","pink"))+
+ # theme_bw()
+
+#add a title
+```
+
+```{r plot-data, fig.width=6}
+#Select the dataset that we want to use to create the graph
+combined_data_substr%>%
+  
+#Select the variables (columns) that we will use to create the graph
+  select(Gender_School_Year, Gender,measure)%>%
+  
+#Reorder the columns so that the Gender_School_Year variable is put in order by descending measure variable (mean wellbeing score)on the x-axis. The y-axis is measure and we are going to choose the colour of the column depending on gender.
+ggplot(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender))+
+  
+#Define which colours you want the columns to be one gender (boys) is deep sky blue and the other (girls) pink.
+  scale_fill_manual(values=c("deepskyblue","pink"))+
+  
+#A column bar chart is chosen instead of a bar because we already have the total measure (mean wellbeing score) values.
+  geom_col()+
+  
+#Remove the legend, we have the gender on the x-axis for people who are colour blind
+  theme(legend.position="none")+
+  
+#Add an x-axis label
+  xlab("High School Year and Gender")+
+  
+#Add a y-axis label
+  ylab("Average Wellbeing Score")+
+  
+#Add a title
+  ggtitle("Average Wellbeing Scores for Pupils in High School")
+
+```
+
+
+
+The map can now be created.
+
+```{r}
+#I have a mp but I want to change the colour to red
+
+#https://cran.r-project.org/web/packages/viridisLite/viridisLite.pdf
+
+
+pal = viridisLite::rocket(n = 24, direction = 1)
+
+S4_councils_DZ_sf %>%
+  select(DataZone,Council_area,Average_Wellbeing_Score) %>%
+  mapview(
+    map.types = "OpenStreetMap",
+    zcol = "Average_Wellbeing_Score", 
+    label = S4_councils_DZ_sf$Council_area,
+    layer.name = "Average_Wellbeing_Score",
+    alpha.regions = 0.8,
+    col.regions = pal
+    )
+```
+
+
+```{r}
+#I have a mp but I want to change the colour to red
+
+#https://cran.r-project.org/web/packages/viridisLite/viridisLite.pdf
+
+
+#pal = viridisLite::rocket(n = length(unique(S4_councils_DZ_sf$Average_Wellbeing_Score)))
+
+pal = viridisLite::rocket(n = 7)
+
+S4_councils_DZ_sf %>%
+  select(DataZone,Council_area,Average_Wellbeing_Score) %>%
+  mapview(
+    map.types = "OpenStreetMap",
+    zcol = "Average_Wellbeing_Score", 
+    label = S4_councils_DZ_sf$Council_area,
+    popup=popupTable(S4_councils_DZ_sf, zcol=c("Council_area", "Average_Wellbeing_Score")),
+    layer.name = "Average_Wellbeing_Score",
+    alpha.regions = 0.8,
+    col.regions = pal,at=c(45,45.5,46,46.5,47,47.5,48)
+    )
+```
+
+https://data-xtractor.com/blog/data-visualization/alternatives-to-pie-charts-2/
+
+https://r-graph-gallery.com/42-colors-names.html
+
+
+https://chartio.com/learn/charts/grouped-bar-chart-complete-guide/
+https://stackoverflow.com/questions/52405176/changing-colors-grouped-bar-chart-ggplot2
+https://statisticsglobe.com/change-colors-of-bars-in-ggplot2-barchart-in-r THIS ONE!!!
+https://r-graph-gallery.com/48-grouped-barplot-with-ggplot2
+https://statisticsglobe.com/draw-grouped-barplot-in-r
+
+
+
+Still to sort the colours, add labels for the means, clear headings and axis labels, read the report and add link. Create a new column with reduced name length.
+
+Location only for females....map??
+
+
+https://jessbutler.github.io/simd/ (You can see the code and data used under "Sources".)
+
+
+
+
+
+
+
+
+These were earlier graph attempts
+
+  #combined_data_substr$Gender_School_Year <- factor(combined_data_substr$Gender_School_Year,levels=c('S2 boys ','S4 boys ', 'S2 girls', 'S4 girls'))
+
+
+
+combined_data_substr%>%
+  select(Gender_School_Year, Gender,measure)%>%
+  #arrange(measure)%>%
+  ggplot(aes())+geom_col(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender))+
+  xlab("High School Year and Gender")+
+  ylab("Average Wellbeing Score")+
+  #scale_fill_manual(values=c("blue", "blue", "pink","pink"))+
+  theme_bw()
+  
+  #scale_color_manual(c("blue","pink"))
+
+#http://www.sthda.com/english/wiki/ggplot2-colors-how-to-change-colors-automatically-and-manually
+    
+```
+This is second attempt
+```{r}
+
+#Col instead of bar used because got the measure [ref] 
+
+#combined_data_substr%>%
+ # select(Gender_School_Year, Gender,measure)%>%
+  #arrange(measure)%>%
+ # ggplot(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender))+geom_col(stat="identity")+scale_fill_manual(values=c("deepskyblue","pink"))+
+ # geom_text(label=measure)+
+ # xlab("High School Year and Gender")+
+ # ylab("Average Wellbeing Score")+
+  #scale_fill_manual(values=c("green", "green", "pink","pink"))+
+ # theme_bw()
+
+#add a title
+```
+
+
+```{r}
+combined_data_substr%>%
+  select(Gender_School_Year, Gender,measure)%>%
+ggplot(aes(x=reorder(Gender_School_Year,-measure), y=measure,fill=Gender)) +geom_bar(stat="identity", position="dodge")+scale_fill_manual(values=c("deepskyblue","pink"))+
+  geom_bar(stat = "identity",
+           position = "dodge")
+
+#remove legend
+```
+
+```{r}
+
+```
+
+```{r}
+S4_councils_DZ_sf%>%
+unique(Average_Wellbeing_Score)
+```
+
+
+## References
+
+1. https://rdocumentation.org/
+
+
+2. https://cran.r-project.org/web/packages/viridisLite/viridisLite.pdf
+
+
+https://data-xtractor.com/blog/data-visualization/alternatives-to-pie-charts-2/
+
+https://r-graph-gallery.com/42-colors-names.html
+
+
+https://chartio.com/learn/charts/grouped-bar-chart-complete-guide/
+https://stackoverflow.com/questions/52405176/changing-colors-grouped-bar-chart-ggplot2
+https://statisticsglobe.com/change-colors-of-bars-in-ggplot2-barchart-in-r THIS ONE!!!
+https://r-graph-gallery.com/48-grouped-barplot-with-ggplot2
+https://statisticsglobe.com/draw-grouped-barplot-in-r
+
+https://r-spatial.github.io/mapview/
+
+https://www.youtube.com/watch?v=pHOto3VDG9s (mapview)
+
+* https://jessbutler.github.io/simd/ (You can see the code and data used under "Sources".)

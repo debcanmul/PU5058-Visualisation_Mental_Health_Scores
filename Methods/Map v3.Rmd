@@ -1,0 +1,41 @@
+
+---
+title: "S4 Girls Average Wellbeing Scores in Scotland"
+
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+
+library(here)
+library(tidyverse)
+library(sf)
+library(flexdashboard)
+library(mapview)
+library(gt)
+library(cowplot)
+library(plotly)
+library(here)
+theme_set(theme_cowplot())
+```
+
+https://r-graph-gallery.com/168-load-a-shape-file-into-r.html
+
+
+```{r}
+S4_Girls<-read_csv(here("Input/22.10.22_03_PU5058_REPORT_S4_GIRLS.csv"))
+
+datazone_sf<-st_read(here("Input/SG_DataZone_Bdry_2011.shp"))
+```
+
+```{r}
+head(datazone_sf)
+```
